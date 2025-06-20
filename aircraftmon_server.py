@@ -41,8 +41,10 @@ DZ_SETTINGS = {
 
 # === Helper to post to Slack ===
 def post_to_slack(text):
-    if SLACK_WEBHOOK_URL:
-        requests.post(SLACK_WEBHOOK_URL, json={"text": text})
+    print(f"[DEBUG] Posting to Slack: {text}")
+    response = requests.post(SLACK_WEBHOOK_URL, json={"text": text})
+    print(f"[DEBUG] Slack response: {response.status_code} {response.text}")
+
 
 # === Background tracker thread ===
 def run_tracker_thread(plane_hex, plane_name, dz_config):
@@ -75,50 +77,24 @@ def slack_event():
         return Response(data["challenge"], status=200, mimetype='text/plain')
 
     event = data.get("event", {})
-    if event.get("type") == "message" and "bot_id" not in event:
-        text = event.get("text", "").lower()
-        print(f"[DEBUG] Message text: {text}")
+    text = event.get("text", "").lower()
+    print(f"[DEBUG] Received event text: {text}")
 
-        if "start" in text:
-            parts = text.split()
-            plane_key = next((p.split("=")[1] for p in parts if p.startswith("plane=")), None)
-            dz_key = next((p.split("=")[1] for p in parts if p.startswith("dz=")), None)
+    # Avoid responding to bot messages to prevent loops
+    if event.get("bot_id"):
+        print("[DEBUG] Ignored bot message")
+        return jsonify(), 200
 
-            print(f"[DEBUG] plane_key: {plane_key}, dz_key: {dz_key}")
+    if "start" in text:
+        post_to_slack("✅ Started tracking your plane request!")
+    elif "stop" in text:
+        post_to_slack("🛑 Stopped tracking.")
+    elif "status" in text:
+        post_to_slack("ℹ️ Tracker status: running.")
+    else:
+        print("[DEBUG] No matching command found")
 
-            if plane_key not in PLANES or dz_key not in DZ_SETTINGS:
-                post_to_slack("❌ Invalid plane or DZ key")
-                return Response("OK", status=200)
-
-            key = f"{plane_key}:{dz_key}"
-            if key in TRACKER_THREADS:
-                post_to_slack(f"🔄 Already tracking {plane_key} at {dz_key}")
-            else:
-                thread = threading.Thread(
-                    target=run_tracker_thread,
-                    args=(
-                        PLANES[plane_key]["hex"],
-                        PLANES[plane_key]["name"],
-                        DZ_SETTINGS[dz_key]
-                    ),
-                    daemon=True
-                )
-                TRACKER_THREADS[key] = thread
-                thread.start()
-                post_to_slack(f"✅ Started tracking {plane_key} at {dz_key}")
-
-        elif "stop" in text:
-            TRACKER_THREADS.clear()  # TODO: Graceful stop
-            post_to_slack("🛑 Stopped all trackers (manual restart required)")
-
-        elif "status" in text:
-            if not TRACKER_THREADS:
-                post_to_slack("❌ No active tracking threads")
-            else:
-                active = ", ".join(TRACKER_THREADS.keys())
-                post_to_slack(f"✅ Currently tracking: {active}")
-
-    return Response("OK", status=200)
+    return jsonify(), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
