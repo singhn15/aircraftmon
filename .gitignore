@@ -1,0 +1,21 @@
+# Ignore virtual environment folder
+.venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Environment variable files
+.env
+.env.*
+
+# IDE files
+.vscode/
+.idea/
+
