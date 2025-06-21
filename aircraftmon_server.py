@@ -77,8 +77,9 @@ def slack_event():
         return Response(data["challenge"], status=200, mimetype='text/plain')
 
     event = data.get("event", {})
-    text = event.get("text", "").lower()
-    print(f"[DEBUG] Received event text: {text}")
+    if event.get("type") == "app_mention" and "bot_id" not in event:
+        text = event.get("text", "").lower()
+        print(f"[DEBUG] Received event text: {text}")
 
     # Avoid responding to bot messages to prevent loops
     if event.get("bot_id"):
@@ -86,13 +87,41 @@ def slack_event():
         return jsonify(), 200
 
     if "start" in text:
-        post_to_slack("✅ Started tracking your plane request!")
+        parts = text.split()
+        plane_key = next((p.split("=")[1] for p in parts if p.startswith("plane=")), None)
+        dz_key = next((p.split("=")[1] for p in parts if p.startswith("dz=")), None)
+
+        print(f"[DEBUG] plane_key: {plane_key}, dz_key: {dz_key}")
+
+        if plane_key not in PLANES or dz_key not in DZ_SETTINGS:
+            post_to_slack("❌ Invalid plane or DZ key")
+            return Response("OK", status=200)
+
+        key = f"{plane_key}:{dz_key}"
+        if key in TRACKER_THREADS:
+            post_to_slack(f"🔄 Already tracking {plane_key} at {dz_key}")
+        else:
+            thread = threading.Thread(
+                target=run_tracker_thread,
+                args=(
+                    PLANES[plane_key]["hex"],
+                    PLANES[plane_key]["name"],
+                    DZ_SETTINGS[dz_key]
+                ),
+                daemon=True
+            )
+            TRACKER_THREADS[key] = thread
+            thread.start()
+            post_to_slack(f"✅ Started tracking {plane_key} at {dz_key}")
+
     elif "stop" in text:
         post_to_slack("🛑 Stopped tracking.")
     elif "status" in text:
         post_to_slack("ℹ️ Tracker status: running.")
     else:
         print("[DEBUG] No matching command found")
+        print(event)
+        print(text)
 
     return jsonify(), 200
 
