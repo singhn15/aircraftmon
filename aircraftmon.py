@@ -35,31 +35,33 @@ class PlaneMonitor:
                 self.callback(state_msg)
 
     async def get_plane_status(self) -> Optional[Dict[str, Any]]:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/icao/{self.plane_hex}"
+        hex_upper = self.plane_hex.upper()
+        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/hex/{hex_upper}"
+        logger.debug(f"Requesting data for plane {hex_upper} from URL: {url}")
         
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(url, headers=self.headers) as response:
+                    logger.debug(f"Response headers: {dict(response.headers)}")
                     response.raise_for_status()  # This will raise an exception if status != 200
                     json_data = await response.json()
-                    ac_list = json_data.get("ac")
-
-                    if not ac_list:
+                    logger.debug(f"Raw API response: {json_data}")
+                    
+                    # Check if we got aircraft data (hex field should be present)
+                    if not json_data.get('hex'):
                         if self.debug:
-                            logger.debug(f"[DEBUG] {self.plane_name} is on the ground")
+                            logger.debug(f"[DEBUG] No aircraft data found for {hex_upper}")
                         return None
 
-                    plane = ac_list[0]
-                    altitude = plane.get("alt_geom")
-
+                    # Return the data directly since it's a single aircraft response
                     return {
-                        "altitude": altitude if isinstance(altitude, (int, float)) else None,
-                        "aircraft_type": plane.get("t"),
-                        "ground_speed": plane.get("gs"),
-                        "ground_track": plane.get("track"),
-                        "vertical_speed": plane.get("geom_rate"),
-                        "latitude": plane.get("lat"),
-                        "longitude": plane.get("lon")
+                        "altitude": json_data.get("alt_geom"),
+                        "aircraft_type": json_data.get("t"),
+                        "ground_speed": json_data.get("gs"),
+                        "ground_track": json_data.get("track"),
+                        "vertical_speed": json_data.get("baro_rate"),
+                        "latitude": json_data.get("lat"),
+                        "longitude": json_data.get("lon")
                     }
             except Exception as e:
                 if self.debug:
@@ -72,30 +74,65 @@ class PlaneMonitor:
     def update_state(self, data: Dict[str, Any]) -> None:
         altitude = data.get("altitude")
         vertical_speed = data.get("vertical_speed")
+        ground_speed = data.get("ground_speed")
         ground_track = data.get("ground_track")
 
-        if altitude is None or vertical_speed is None:
-            if self.state != "landed":
-                self.state = "landed"
-                asyncio.create_task(self.announce("[STATE] 🛬 Plane landed or transponder off"))
+        # Log all relevant data for debugging
+        if self.debug:
+            logger.debug(f"[DEBUG] Current state: {self.state}")
+            logger.debug(f"[DEBUG] Altitude: {altitude} ft")
+            logger.debug(f"[DEBUG] Vertical Speed: {vertical_speed} ft/min")
+            logger.debug(f"[DEBUG] Ground Speed: {ground_speed} kts")
+            logger.debug(f"[DEBUG] Ground Track: {ground_track}°")
+
+        # Check if we have enough data to determine state
+        if altitude is None and vertical_speed is None and ground_speed is None:
+            if self.state != "unknown":
+                self.set_state("unknown", "[STATE] ❓ Unable to determine aircraft state - insufficient data")
             return
 
-        if altitude < self.climb_threshold and vertical_speed > 0:
-            self.set_state("taxiing", "[STATE] 🛬 Plane is taxiing or taking off!")
+        # If we have ground speed and it's very low, plane is probably on ground
+        if ground_speed is not None and ground_speed < 30:
+            if self.state != "landed":
+                self.set_state("landed", f"[STATE] 🛬 Plane appears to be on ground (speed: {ground_speed} kts)")
+            return
 
-        elif self.climb_threshold <= altitude <= self.jump_run_altitude:
-            self.set_state("climbing", f"[STATE] 🛬 Load is climbing! Vertical speed: {vertical_speed}")
+        # If we have altitude and it's below threshold, check if taking off
+        if altitude is not None and altitude < self.climb_threshold:
+            if vertical_speed is not None and vertical_speed > 300:  # More than 300 ft/min climb
+                self.set_state("taking_off", f"[STATE] 🛫 Plane is taking off! Climbing at {vertical_speed} ft/min")
+            elif self.state != "landed":
+                self.set_state("landed", f"[STATE] 🛬 Plane at low altitude: {altitude} ft")
+            return
 
-        elif vertical_speed < self.descent_threshold:
-            self.set_state("descending", "[STATE] ⬇️ Plane descending after jump")
+        # Check climbing state
+        if self.climb_threshold <= altitude <= self.jump_run_altitude:
+            if vertical_speed is not None and vertical_speed > 300:
+                self.set_state("climbing", f"[STATE] ⬆️ Load is climbing! Altitude: {altitude} ft, Rate: {vertical_speed} ft/min")
+            return
 
-        elif abs(altitude - self.jump_run_altitude) < 1000 and ground_track is not None and 270 < ground_track < 330:
-            self.set_state("jump_run", f"[STATE] 🪂 Jump run! Plane at {altitude} ft")
+        # Check jump run state - plane is at jump altitude and on the right heading
+        if abs(altitude - self.jump_run_altitude) < 1000:
+            if ground_track is not None and 270 <= ground_track <= 330:
+                self.set_state("jump_run", f"[STATE] 🪂 Jump run! Altitude: {altitude} ft, Heading: {ground_track}°")
+            else:
+                self.set_state("at_altitude", f"[STATE] ✈️ At jump altitude: {altitude} ft")
+            return
+
+        # Check if descending
+        if vertical_speed is not None and vertical_speed < self.descent_threshold:
+            self.set_state("descending", f"[STATE] ⬇️ Plane descending at {vertical_speed} ft/min")
+            return
+
+        # If we get here and have altitude but don't match other conditions
+        if altitude is not None:
+            self.set_state("flying", f"[STATE] ✈️ Flying at {altitude} ft")
 
     def set_state(self, new_state: str, message: str) -> None:
         if self.state != new_state:
             if self.debug:
-                asyncio.create_task(self.announce(f"[DEBUG] Transition: {self.state} → {new_state}"))
+                logger.debug(f"[DEBUG] State transition: {self.state} → {new_state}")
+                logger.debug(f"[DEBUG] Reason: {message}")
             self.state = new_state
             asyncio.create_task(self.announce(message))
 
@@ -108,9 +145,11 @@ class PlaneMonitor:
 
             if self.debug:
                 if not data:
-                    await self.announce(f"[DEBUG] {self.plane_name} is on the ground or unavailable")
+                    # await self.announce(f"[DEBUG] {self.plane_name} is on the ground or unavailable")
+                    logger.debug(f"[DEBUG] {self.plane_name} is on the ground or unavailable")
                 else:
-                    await self.announce(f"[DEBUG] Status: {data}")
+                    # await self.announce(f"[DEBUG] Status: {data}")
+                    logger.debug(f"[DEBUG] Status: {data}")
 
             if data:
                 no_data_count = 0
