@@ -1,8 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, JSONResponse
 import logging
-from dotenv import load_dotenv
-import os
 import asyncio
 import aiohttp
 from typing import Optional
@@ -10,64 +8,97 @@ import boto3
 from botocore.exceptions import ClientError
 from aircraftmon import PlaneMonitor
 from datetime import datetime
+import json
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+# Reduce boto3 logging noise
+logging.getLogger('boto3').setLevel(logging.INFO)
+logging.getLogger('botocore').setLevel(logging.INFO)
+logging.getLogger('urllib3').setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
 
-load_dotenv()
-
-# Initialize AWS clients if AWS credentials are available
-try:
-    dynamodb = boto3.resource('dynamodb')
-    secrets = boto3.client('secretsmanager')
-    table = dynamodb.Table('aircraft_tracking')
-    USE_AWS = True
-except:
-    USE_AWS = False
-    logger.info("AWS credentials not found, using local environment variables")
+# Initialize AWS clients
+dynamodb = boto3.resource('dynamodb')
+secrets = boto3.client('secretsmanager')
+table = dynamodb.Table('aircraft_tracking')
 
 app = FastAPI()
 
 async def get_secret(secret_name: str) -> str:
-    # First try environment variables
-    env_value = os.environ.get(secret_name)
-    if env_value:
-        return env_value
+    try:
+        response = await asyncio.to_thread(
+            secrets.get_secret_value,
+            SecretId=secret_name
+        )
+        secret_string = response['SecretString']
         
-    # Then try AWS Secrets Manager if available
-    if USE_AWS:
+        # Handle JSON-formatted secrets
         try:
-            response = secrets.get_secret_value(SecretId=secret_name)
-            return response['SecretString']
-        except ClientError as e:
-            logger.error(f"Error fetching secret {secret_name}: {e}")
-    
-    return ""
+            secret_dict = json.loads(secret_string)
+            if secret_name == 'SLACK_WEBHOOK_URL':
+                return secret_dict.get('webhook', '')
+            return secret_dict.get(secret_name, '')
+        except json.JSONDecodeError:
+            # If not JSON, return as is
+            return secret_string
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'DecryptionFailureException':
+            logger.error(f"Secret {secret_name}: Unable to decrypt using provided KMS key")
+        elif error_code == 'InternalServiceErrorException':
+            logger.error(f"Secret {secret_name}: Internal service error in AWS")
+        elif error_code == 'InvalidParameterException':
+            logger.error(f"Secret {secret_name}: Invalid parameter provided")
+        elif error_code == 'InvalidRequestException':
+            logger.error(f"Secret {secret_name}: Invalid request to AWS")
+        elif error_code == 'ResourceNotFoundException':
+            logger.error(f"Secret {secret_name} not found in Secrets Manager")
+        else:
+            logger.error(f"Unknown error retrieving secret {secret_name}: {e}")
+        return ""
 
 async def get_tracker_state(plane_hex: str) -> dict:
-    if not USE_AWS:
-        return {}
-        
     try:
-        response = table.get_item(Key={'plane_hex': plane_hex})
+        response = await asyncio.to_thread(
+            table.get_item,
+            Key={'plane_hex': plane_hex}
+        )
         return response.get('Item', {})
     except ClientError as e:
-        logger.error(f"Error fetching state: {e}")
+        error_code = e.response['Error']['Code']
+        if error_code == 'ResourceNotFoundException':
+            logger.error("DynamoDB table 'aircraft_tracking' not found")
+        elif error_code == 'ProvisionedThroughputExceededException':
+            logger.error("DynamoDB throughput exceeded - consider increasing capacity")
+        else:
+            logger.error(f"DynamoDB error retrieving state for {plane_hex}: {e}")
         return {}
 
 async def update_tracker_state(plane_hex: str, state: str, task_id: Optional[str] = None):
-    if not USE_AWS:
-        return
-        
     try:
-        table.put_item(Item={
+        item = {
             'plane_hex': plane_hex,
             'state': state,
-            'task_id': task_id,
             'updated_at': int(datetime.now().timestamp())
-        })
+        }
+        if task_id:
+            item['task_id'] = task_id
+            
+        await asyncio.to_thread(
+            table.put_item,
+            Item=item
+        )
+        logger.debug(f"Successfully updated state for {plane_hex} to {state}")
     except ClientError as e:
-        logger.error(f"Error updating state: {e}")
+        error_code = e.response['Error']['Code']
+        if error_code == 'ResourceNotFoundException':
+            logger.error("DynamoDB table 'aircraft_tracking' not found")
+        elif error_code == 'ProvisionedThroughputExceededException':
+            logger.error("DynamoDB throughput exceeded - consider increasing capacity")
+        else:
+            logger.error(f"DynamoDB error updating state for {plane_hex}: {e}")
 
 async def post_to_slack(message: str):
     webhook_url = await get_secret('SLACK_WEBHOOK_URL')
@@ -149,27 +180,42 @@ async def slack_events(request: Request):
             logger.debug(f"challenge: {challenge}")
             return PlainTextResponse(content=challenge)
 
-        event = data.get("event")
-        text = event.get("text", "").lower()
+        event = data.get("event", {})
+        text = event.get("text", "").lower().strip()
         
-        # Safely get plane_hex from command
-        words = text.split(" ")
-        plane_hex = words[2] if len(words) > 2 else None
+        # Parse command and plane_hex
+        parts = text.split()
+        if len(parts) < 2:
+            response_text = "Please provide a command: 'start tracking <plane_hex>', 'status <plane_hex>', or 'stop <plane_hex>'"
+            await post_to_slack(response_text)
+            return JSONResponse(status_code=200, content={})
 
-        if "start" in text:
-            if plane_hex:
-                response_text = await start_tracking(plane_hex)
-            else:
+        command = parts[1]
+        
+        # Extract plane_hex if provided
+        plane_hex = parts[2] if len(parts) > 2 else None
+        
+        if command == "start":
+            if not plane_hex:
                 response_text = "Please provide a plane hex to track (e.g. 'start tracking A65DDF')"
-        elif "status" in text:
-            response_text = await get_tracker_status(plane_hex or "")
-        elif "stop" in text:
-            response_text = await stop_tracking(plane_hex or "")
+            else:
+                response_text = await start_tracking(plane_hex)
+        elif command == "status":
+            if not plane_hex:
+                response_text = "Please provide a plane hex to check status (e.g. 'status A65DDF')"
+            else:
+                response_text = await get_tracker_status(plane_hex)
+        elif command == "stop":
+            if not plane_hex:
+                response_text = "Please provide a plane hex to stop tracking (e.g. 'stop A65DDF')"
+            else:
+                response_text = await stop_tracking(plane_hex)
         else:
-            response_text = "Available commands: 'start' to begin tracking, 'status' to check current state, 'stop' to stop tracking"
+            response_text = "Available commands:\n• 'start tracking <plane_hex>' to begin tracking\n• 'status <plane_hex>' to check current state\n• 'stop <plane_hex>' to stop tracking"
 
         await post_to_slack(response_text)
         return JSONResponse(status_code=200, content={})
     except Exception as e:
         logger.error(f"Error processing Slack event: {e}")
+        await post_to_slack("❌ Error processing command. Please check the format and try again.")
         return JSONResponse(status_code=400, content={"error": "Invalid request"})
