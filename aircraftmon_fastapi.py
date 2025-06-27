@@ -20,11 +20,12 @@ logging.getLogger('urllib3').setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
 secrets = boto3.client('secretsmanager')
-table = dynamodb.Table('aircraft_tracking')
 
 app = FastAPI()
+
+# Global dict to store active trackers
+active_trackers = {}
 
 async def get_secret(secret_name: str) -> str:
     try:
@@ -59,71 +60,35 @@ async def get_secret(secret_name: str) -> str:
             logger.error(f"Unknown error retrieving secret {secret_name}: {e}")
         return ""
 
-async def get_tracker_state(plane_hex: str) -> dict:
-    try:
-        response = await asyncio.to_thread(
-            table.get_item,
-            Key={'plane_hex': plane_hex}
-        )
-        return response.get('Item', {})
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'ResourceNotFoundException':
-            logger.error("DynamoDB table 'aircraft_tracking' not found")
-        elif error_code == 'ProvisionedThroughputExceededException':
-            logger.error("DynamoDB throughput exceeded - consider increasing capacity")
-        else:
-            logger.error(f"DynamoDB error retrieving state for {plane_hex}: {e}")
-        return {}
-
-async def update_tracker_state(plane_hex: str, state: str, task_id: Optional[str] = None):
-    try:
-        item = {
-            'plane_hex': plane_hex,
-            'state': state,
-            'updated_at': int(datetime.now().timestamp())
-        }
-        if task_id:
-            item['task_id'] = task_id
-            
-        await asyncio.to_thread(
-            table.put_item,
-            Item=item
-        )
-        logger.debug(f"Successfully updated state for {plane_hex} to {state}")
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'ResourceNotFoundException':
-            logger.error("DynamoDB table 'aircraft_tracking' not found")
-        elif error_code == 'ProvisionedThroughputExceededException':
-            logger.error("DynamoDB throughput exceeded - consider increasing capacity")
-        else:
-            logger.error(f"DynamoDB error updating state for {plane_hex}: {e}")
-
 async def post_to_slack(message: str):
+    logger.debug(f"[DEBUG] Attempting to post to Slack: {message}")
     webhook_url = await get_secret('SLACK_WEBHOOK_URL')
     if not webhook_url:
         logger.error("SLACK_WEBHOOK_URL not configured in Secrets Manager")
         return
-        
+    
+    logger.debug("[DEBUG] Got webhook URL from secrets")
     payload = {"text": message}
     async with aiohttp.ClientSession() as session:
         try:
+            logger.debug("[DEBUG] Sending POST request to Slack")
             async with session.post(webhook_url, json=payload) as response:
-                logger.debug(f"posting to slack... {response.status} {await response.text()}")
+                response_text = await response.text()
+                logger.debug(f"[DEBUG] Slack response: {response.status} {response_text}")
         except Exception as e:
-            logger.error(f"Failed to post to slack. {e}")
+            logger.error(f"Failed to post to slack: {str(e)}")
 
 async def start_tracking(plane_hex: str):
     # Check if already tracking
-    state = await get_tracker_state(plane_hex)
-    if state.get('state') == 'active':
+    if plane_hex in active_trackers:
         return f"Tracking already in progress for {plane_hex}!"
     
     # Get API key from Secrets Manager
     api_key = await get_secret('RAPIDAPI_KEY')
     if not api_key:
         return "API key not configured"
+    
+    logger.debug(f"Starting tracking for {plane_hex} with API key length: {len(api_key)}")
 
     # Initialize the tracker with your configuration
     tracker = PlaneMonitor(
@@ -135,7 +100,8 @@ async def start_tracking(plane_hex: str):
         plane_name="Skydiving Aircraft",
         climb_threshold=5300,
         descent_threshold=-500,
-        jump_run_altitude=12500,
+        jump_run_altitude=18500,
+        hop_n_pop_altitude=5000,
         runway_altitude=5000,
         dz_lat=40.16638,
         dz_lon=-105.16178,
@@ -145,25 +111,55 @@ async def start_tracking(plane_hex: str):
     )
     
     # Start tracking in the background
+    logger.debug("Creating tracking task...")
     task = asyncio.create_task(tracker.track())
-    await update_tracker_state(plane_hex, 'active', str(id(task)))
+    logger.debug("Tracking task created")
+    
+    # Store the tracker and task
+    active_trackers[plane_hex] = (tracker, task)
+    
     return "Started tracking aircraft!"
 
 async def stop_tracking(plane_hex: str):
-    state = await get_tracker_state(plane_hex)
-    if state.get('state') != 'active':
+    if plane_hex not in active_trackers:
         return "No tracking in progress"
 
     await post_to_slack("Stopping aircraft tracking...")
-    await update_tracker_state(plane_hex, 'stopped')
+    
+    # Stop the tracker if it exists
+    tracker, task = active_trackers[plane_hex]
+    await tracker.stop()  # Signal the tracker to stop
+    # Wait a moment for the tracker to stop gracefully
+    try:
+        await asyncio.wait_for(task, timeout=2.0)
+    except asyncio.TimeoutError:
+        logger.warning(f"Tracker for {plane_hex} taking longer than expected to stop")
+    
+    # Remove from active trackers
+    del active_trackers[plane_hex]
     return "Aircraft tracking has stopped."
 
 async def get_tracker_status(plane_hex: str):
-    state = await get_tracker_state(plane_hex)
-    if not state:
-        return "No tracker initialized"
-    return f"Tracker Status: {state.get('state', 'Unknown')}"
-        
+    if plane_hex in active_trackers:
+        return "Tracker Status: active"
+    return "Tracker Status: inactive"
+
+async def clear_trackers():
+    if not active_trackers:
+        return "No active trackers to clear"
+    
+    # Stop all active trackers
+    for plane_hex in list(active_trackers.keys()):
+        await stop_tracking(plane_hex)
+    
+    return f"Cleared all active trackers"
+
+@app.post("/clear")
+async def clear_states():
+    result = await clear_trackers()
+    await post_to_slack(f"🧹 {result}")
+    return {"message": result}
+
 @app.get("/")
 async def root():
     logger.debug("hello, world! aircraftmon fastapi. port 4200")
@@ -173,7 +169,7 @@ async def root():
 async def slack_events(request: Request):
     try:
         data = await request.json()
-        logger.debug(f"Incoming Slack payload: {data}")
+        # logger.debug(f"Incoming Slack payload: {data}")
 
         if data.get("type") == "url_verification":
             challenge = data.get("challenge")
@@ -210,6 +206,8 @@ async def slack_events(request: Request):
                 response_text = "Please provide a plane hex to stop tracking (e.g. 'stop A65DDF')"
             else:
                 response_text = await stop_tracking(plane_hex)
+        elif command == "clear":
+            response_text = await clear_trackers()
         else:
             response_text = "Available commands:\n• 'start tracking <plane_hex>' to begin tracking\n• 'status <plane_hex>' to check current state\n• 'stop <plane_hex>' to stop tracking"
 
