@@ -97,7 +97,6 @@ async def start_tracking(plane_hex: str):
             "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
         },
         plane_hex=plane_hex,
-        plane_name="Skydiving Aircraft",
         climb_threshold=500,
         descent_threshold=-500,
         jump_run_altitude=12500,
@@ -182,7 +181,7 @@ async def slack_events(request: Request):
         # Parse command and plane_hex
         parts = text.split()
         if len(parts) < 2:
-            response_text = "Please provide a command: 'start tracking <plane_hex>', 'status <plane_hex>', or 'stop <plane_hex>'"
+            response_text = "Please provide a command: '@aircraftmon_app start <plane_hex>', '@aircraftmon_app status <plane_hex>', or '@aircraftmon_app stop <plane_hex>'"
             await post_to_slack(response_text)
             return JSONResponse(status_code=200, content={})
 
@@ -193,23 +192,23 @@ async def slack_events(request: Request):
         
         if command == "start":
             if not plane_hex:
-                response_text = "Please provide a plane hex to track (e.g. 'start tracking A65DDF')"
+                response_text = "Please provide a plane hex to track (e.g. '@aircraftmon_app start a06796')"
             else:
                 response_text = await start_tracking(plane_hex)
         elif command == "status":
             if not plane_hex:
-                response_text = "Please provide a plane hex to check status (e.g. 'status A65DDF')"
+                response_text = "Please provide a plane hex to check status (e.g. '@aircraftmon_app status a06796')"
             else:
                 response_text = await get_tracker_status(plane_hex)
         elif command == "stop":
             if not plane_hex:
-                response_text = "Please provide a plane hex to stop tracking (e.g. 'stop A65DDF')"
+                response_text = "Please provide a plane hex to stop tracking (e.g. '@aircraftmon_app stop a06796')"
             else:
                 response_text = await stop_tracking(plane_hex)
         elif command == "clear":
             response_text = await clear_trackers()
         else:
-            response_text = "Available commands:\n• 'start tracking <plane_hex>' to begin tracking\n• 'status <plane_hex>' to check current state\n• 'stop <plane_hex>' to stop tracking"
+            response_text = "Available commands:\n• '@aircraftmon_app start <plane_hex>' to begin tracking\n• '@aircraftmon_app status <plane_hex>' to check current state\n• '@aircraftmon_app stop <plane_hex>' to stop tracking"
 
         await post_to_slack(response_text)
         return JSONResponse(status_code=200, content={})

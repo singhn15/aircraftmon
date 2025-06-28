@@ -19,3 +19,6 @@ dist/
 .vscode/
 .idea/
 
+# Log files
+*.log
+*.json.log

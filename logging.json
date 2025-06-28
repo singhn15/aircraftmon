@@ -1,0 +1,31 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+      "json": {
+        "class": "pythonjsonlogger.jsonlogger.JsonFormatter",
+        "format": "%(asctime)s %(levelname)s %(name)s %(message)s"
+      }
+    },
+    "handlers": {
+      "timed_rotating_file": {
+        "class": "logging.handlers.TimedRotatingFileHandler",
+        "formatter": "json",
+        "filename": "myapp.json.log",
+        "when": "midnight",
+        "backupCount": 7,
+        "level": "DEBUG",
+        "encoding": "utf8",
+        "utc": false
+      },
+      "console": {
+        "class": "logging.StreamHandler",
+        "formatter": "json",
+        "level": "DEBUG"
+      }
+    },
+    "root": {
+      "handlers": ["timed_rotating_file", "console"],
+      "level": "DEBUG"
+    }
+  }

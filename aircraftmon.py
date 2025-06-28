@@ -6,16 +6,15 @@ import logging
 from typing import Callable, Union, Awaitable, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 class PlaneMonitor:
-    def __init__(self, headers: Dict[str, str], plane_hex: str, plane_name: str, 
+    def __init__(self, headers: Dict[str, str], plane_hex: str, 
                  climb_threshold: float, descent_threshold: float, jump_run_altitude: float, hop_n_pop_altitude: float, 
                  runway_altitude: float, dz_lat: float, dz_lon: float, radius_nm: float, 
                  debug: bool, callback: Optional[Union[Callable[[str], None], Callable[[str], Awaitable[None]]]] = None):
         self.headers = headers
         self.plane_hex = plane_hex
-        self.plane_name = plane_name
         self.climb_threshold = climb_threshold
         self.descent_threshold = descent_threshold
         self.jump_run_altitude = jump_run_altitude
@@ -31,23 +30,25 @@ class PlaneMonitor:
         self.tracking_active = True  # Flag to control the tracking loop
         self.descent_counter = 0  # Counter for consecutive descent readings
         self.ascent_counter = 0  # Counter for consecutive ascent readings
+        self.plane_name = "Unknown aircraft"
 
     async def announce(self, state_msg: str) -> None:
-        logger.debug(f"[DEBUG] Announcing state: {state_msg}")
-        print(f"[{datetime.now().strftime('%H:%M:%S %B %d, %Y')}] {state_msg}")
+        # logger.debug(f"[DEBUG] Announcing state: {state_msg}")
+        message = f"[{datetime.now().strftime('%H:%M:%S %B %d, %Y')}] {state_msg}"
+        logger.debug(message)
         if self.callback:
             logger.debug("[DEBUG] Callback is present, attempting to call")
             if asyncio.iscoroutinefunction(self.callback):
                 logger.debug("[DEBUG] Calling async callback")
-                await self.callback(state_msg)
+                await self.callback(message)
             else:
                 logger.debug("[DEBUG] Calling sync callback")
-                self.callback(state_msg)
+                self.callback(message)
 
     async def get_plane_status(self) -> Optional[Dict[str, Any]]:
         hex_upper = self.plane_hex.upper()
         url = f"https://adsbexchange-com1.p.rapidapi.com/v2/icao/{hex_upper}"
-        logger.debug(f"Requesting data for plane {hex_upper} from URL: {url}")
+        logger.info(f"Requesting data for plane {hex_upper} from URL: {url}")
         # logger.debug(f"Using headers: {self.headers}")
         
         async with aiohttp.ClientSession() as session:
@@ -77,12 +78,11 @@ class PlaneMonitor:
                         "ground_track": plane.get("track"),
                         "vertical_speed": plane.get("geom_rate"),
                         "latitude": plane.get("lat"),
-                        "longitude": plane.get("lon"),
-                        "nav_altitude_mcp": plane.get("nav_altitude_mcp")  # Pilot's selected/target altitude
+                        "longitude": plane.get("lon")
                     }
-                    logger.debug(f"Processed plane data: {result}")
-                    if self.debug and result["altitude"] != result["altitude_barometric"]:
-                        logger.debug(f"[DEBUG] Altitude difference: geom={result['altitude']} baro={result['altitude_barometric']}")
+                    # logger.debug(f"Processed plane data: {result}")
+                    # if self.debug and result["altitude"] != result["altitude_barometric"]:
+                    #     logger.debug(f"[DEBUG] Altitude difference: geom={result['altitude']} baro={result['altitude_barometric']}")
                     return result
             except aiohttp.ClientResponseError as e:
                 if self.debug:
@@ -96,8 +96,8 @@ class PlaneMonitor:
     def set_state(self, new_state: str, message: str) -> None:
         if self.state != new_state:
             if self.debug:
-                logger.debug(f"[DEBUG] State transition: {self.state} → {new_state}")
-                logger.debug(f"[DEBUG] Reason: {message}")
+                logger.info(f"[DEBUG] State transition: {self.state} → {new_state}")
+                logger.info(f"[DEBUG] Reason: {message}")
             self.state = new_state
             self.state_changed = True  # Mark that we've changed state
             asyncio.create_task(self.announce(message))
@@ -108,7 +108,6 @@ class PlaneMonitor:
         vertical_speed = data.get("vertical_speed")
         ground_speed = data.get("ground_speed")
         ground_track = data.get("ground_track")
-        # target_altitude = data.get("nav_altitude_mcp")
         latitude = data.get("latitude")
         longitude = data.get("longitude")
         self.state_changed = False  # Reset state change tracker at start of update
@@ -117,52 +116,45 @@ class PlaneMonitor:
             agl = altitude - self.runway_altitude
         else:
             agl = None
+
         # Log all relevant data for debugging
-        if self.debug:
-            logger.debug(f"[DEBUG] Current state: {self.state}")
-            logger.debug(f"[DEBUG] Altitude (geom/GPS): {altitude} ft")
-            logger.debug(f"[DEBUG] Altitude (baro): {altitude_barometric} ft")
-            logger.debug(f"[DEBUG] Geometric AGL: {agl} ft")
-            # logger.debug(f"[DEBUG] Target Altitude: {target_altitude} ft")
-            logger.debug(f"[DEBUG] Latitude: {latitude}")
-            logger.debug(f"[DEBUG] Longitude: {longitude}")
-            logger.debug(f"[DEBUG] Vertical Speed: {vertical_speed} ft/min")
-            logger.debug(f"[DEBUG] Ground Speed: {ground_speed} kts")
-            logger.debug(f"[DEBUG] Ground Track: {ground_track}°")
+        logger.info(f"Current state: {self.state}")
+        logger.info(f"Plane name: {self.plane_name}")
+        logger.info(f"Altitude (geom/GPS): {altitude} ft")
+        logger.info(f"Altitude (baro): {altitude_barometric} ft")
+        logger.info(f"Geometric AGL: {agl} ft AGL")
+        logger.info(f"Latitude: {latitude}")
+        logger.info(f"Longitude: {longitude}")
+        logger.info(f"Vertical Speed: {vertical_speed} ft/min")
+        logger.info(f"Ground Speed: {ground_speed} kts")
+        logger.info(f"Ground Track: {ground_track}°")
 
         # Check if we have enough data to determine state
         if agl is None and vertical_speed is None and ground_speed is None:
-            logger.debug("[DEBUG] Insufficient data to determine state")
+            logger.info("[DEBUG] Insufficient data to determine state")
             if self.state != "unknown":
                 self.set_state("unknown", "[STATE] ❓ Unable to determine aircraft state - insufficient data")
             return
 
         # If we have ground speed and it's very low, plane is probably on ground
         if ground_speed is not None and ground_speed < 30:
-            logger.debug("[DEBUG] Ground speed indicates plane is on ground")
+            logger.info("[DEBUG] Ground speed indicates plane is on ground")
             if self.state != "landed":
                 self.set_state("landed", f"[STATE] 🛬 Plane appears to be on ground (speed: {ground_speed} kts)")
             return
-
-        # Check if pilot has set a new target altitude
-        # if target_altitude is not None:
-        #     if abs(target_altitude - self.jump_run_altitude) < 500 and self.state != "climbing_to_jump_run":
-        #         self.set_state("climbing_to_jump_run", f"[STATE] 🎯 Pilot has set jump altitude: {target_altitude} ft")
-        #     elif abs(target_altitude - self.hop_n_pop_altitude) < 500 and self.state != "climbing_to_hop_n_pop":
-        #         self.set_state("climbing_to_hop_n_pop", f"[STATE] 🎯 Pilot has set hop and pop altitude: {target_altitude} ft")
 
         # Check climbing state
         if agl is not None and self.climb_threshold <= agl <= self.jump_run_altitude:
             if vertical_speed is not None and vertical_speed > 300:
                 self.ascent_counter += 1
                 if self.ascent_counter >= 3:  # Three consecutive ascent readings
-                    self.set_state("climbing", f"[STATE] ⬆️ Load is climbing! Altitude: {agl} ft, Rate: {vertical_speed} ft/min")
+                    self.set_state("climbing", f"[STATE] ⬆️ {self.plane_name} load is climbing! Altitude: {agl} ft, Rate: {vertical_speed} ft/min")
 
         # Check jump run state - plane is at jump altitude, on the right heading, and past airport rd
         if agl is not None and abs(agl - self.jump_run_altitude) < 1000:
             if ground_track is not None and 270 <= ground_track <= 330:
                 if longitude is not None and longitude < -105.155:
-                    self.set_state("jump_run", f"[STATE] 🪂 Jump run! Altitude: {agl} ft, Heading: {ground_track}°")
+                    self.set_state("jump_run", f"[STATE] 🪂 {self.plane_name} jump run! Altitude: {agl} ft, Heading: {ground_track}°")
             else:
                 self.set_state("at_altitude", f"[STATE] ✈️ Approaching jump altitude: {agl} ft")
 
@@ -170,51 +162,47 @@ class PlaneMonitor:
         if agl is not None and abs(agl - self.hop_n_pop_altitude) < 500:
             if ground_track is not None and 270 <= ground_track <= 330:
                 if longitude is not None and longitude < -105.155:
-                    self.set_state("hop_n_pop_run", f"[STATE] 🪂 Hop and pop run! Altitude: {agl} ft, Heading: {ground_track}°")
+                    self.set_state("hop_n_pop_run", f"[STATE] 🪂 {self.plane_name} hop and pop run! Altitude: {agl} ft, Heading: {ground_track}°")
             else:
-                self.set_state("at_hop_n_pop_altitude", f"[STATE] ✈️ At hop and pop altitude: {agl} ft")
+                self.set_state("at_hop_n_pop_altitude", f"[STATE] ✈️ {self.plane_name} approaching hop and pop altitude: {agl} ft")
 
         # Check if descending
         if vertical_speed is not None and vertical_speed < self.descent_threshold:
             self.descent_counter += 1
             if self.descent_counter >= 3:  # Three consecutive descent readings
-                self.set_state("descending", f"[STATE] ⬇️ Plane descending at {vertical_speed} ft/min")
+                self.set_state("descending", f"[STATE] ⬇️ {self.plane_name} plane descending at {vertical_speed} ft/min")
         else:
             self.descent_counter = 0  # Reset counter if not descending
 
         # Only set flying state if we haven't set any other state
         if not self.state and agl is not None:
-            self.set_state("flying", f"[STATE] ✈️ Flying at {agl} ft")
+            self.set_state("flying", f"[STATE] ✈️ {self.plane_name} Flying at {agl} ft")
 
     async def stop(self):
         # Stop the tracking loop gracefully
         self.tracking_active = False
-        logger.debug(f"Stop signal sent to tracker for {self.plane_hex}")
+        logger.info(f"Stop signal sent to tracker for {self.plane_hex} {self.plane_name}")
 
     async def track(self) -> None:
-        logger.debug("Starting tracking loop...")
+        logger.info("Starting tracking loop...")
         no_data_count = 0
         max_no_data = 5
 
         while self.tracking_active:
-            logger.debug("Fetching plane status...")
+            logger.info("Fetching plane status...")
             data = await self.get_plane_status()
-            # logger.debug(f"Received data: {data}")
             
             if self.plane_hex == "acbc30":
-                plane_name = "Mile-Hi King Air"
+                self.plane_name = "Mile-Hi King Air"
             elif self.plane_hex == "a06796":
-                plane_name = "Mile-Hi Twin Otter"
-            elif self.plane_hex == "a9da5a":
-                plane_name = "Random Cessna 172"
+                self.plane_name = "Mile-Hi Twin Otter"
             else:
-                plane_name = "Unknown aircraft"
-
-            if self.debug:
-                if not data:
-                    logger.debug(f"[DEBUG] {plane_name} is on the ground or unavailable")
-                else:
-                    logger.debug(f"[DEBUG] Status: {data}")
+                self.plane_name = "Unknown aircraft"
+        
+            if not data:
+                logger.info(f"{self.plane_name} is on the ground or unavailable")
+            else:
+                logger.debug(f"[DEBUG] Status: {data}")
 
             if data:
                 no_data_count = 0
@@ -222,15 +210,15 @@ class PlaneMonitor:
                 self.update_state(data)
             else:
                 no_data_count += 1
-                logger.debug(f"No data received. Count: {no_data_count}/{max_no_data}")
-                self.set_state("landed", f"[STATE] 🛬 {plane_name} landed or transponder off")
+                logger.info(f"No data received. Count: {no_data_count}/{max_no_data}")
+                self.set_state("landed", f"[STATE] 🛬 {self.plane_name} landed or transponder off")
                 if no_data_count >= max_no_data:
-                    await self.announce(f"[INFO] Stopping tracking after {max_no_data} no data responses")
+                    await self.announce(f"[INFO] Stopping tracking {self.plane_name} after {max_no_data} no data responses")
                     break  # stop the loop
 
             await asyncio.sleep(10)
         
-        logger.debug(f"Tracking loop ended for {plane_name}")
+        logger.info(f"Tracking loop ended for {self.plane_name}")
 
 if __name__ == '__main__':
     HEADERS = {
@@ -244,7 +232,6 @@ if __name__ == '__main__':
         test_plane = PlaneMonitor(
             headers=HEADERS,
             plane_hex="A65DDF",
-            plane_name="random plane for testing",
             climb_threshold=5500,
             descent_threshold=-500,
             jump_run_altitude=12500,
