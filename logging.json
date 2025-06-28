@@ -11,7 +11,7 @@
       "timed_rotating_file": {
         "class": "logging.handlers.TimedRotatingFileHandler",
         "formatter": "json",
-        "filename": "myapp.json.log",
+        "filename": "aircraftmon_fastapi.json.log",
         "when": "midnight",
         "backupCount": 7,
         "level": "DEBUG",

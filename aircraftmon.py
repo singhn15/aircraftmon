@@ -71,8 +71,8 @@ class PlaneMonitor:
                     
                     # Return the processed aircraft data
                     result = {
-                        "altitude": plane.get("alt_geom"),  # Using geometric altitude (GPS/WGS84 based)
-                        "altitude_barometric": plane.get("alt_baro"),  # Keep barometric as reference
+                        "altitude": plane.get("alt_baro"),  # Using geometric altitude (GPS/WGS84 based)
+                        "altitude_geometric": plane.get("alt_geom"),  # Keep barometric as reference
                         "aircraft_type": plane.get("t"),
                         "ground_speed": plane.get("gs"),
                         "ground_track": plane.get("track"),
@@ -104,7 +104,7 @@ class PlaneMonitor:
 
     def update_state(self, data: Dict[str, Any]) -> None:
         altitude = data.get("altitude")  # Using geometric altitude
-        altitude_barometric = data.get("altitude_barometric")
+        altitude_geometric = data.get("altitude_geometric")
         vertical_speed = data.get("vertical_speed")
         ground_speed = data.get("ground_speed")
         ground_track = data.get("ground_track")
@@ -120,9 +120,9 @@ class PlaneMonitor:
         # Log all relevant data for debugging
         logger.info(f"Current state: {self.state}")
         logger.info(f"Plane name: {self.plane_name}")
-        logger.info(f"Altitude (geom/GPS): {altitude} ft")
-        logger.info(f"Altitude (baro): {altitude_barometric} ft")
-        logger.info(f"Geometric AGL: {agl} ft AGL")
+        logger.info(f"Altitude (baro): {altitude} ft")
+        logger.info(f"Altitude (geom): {altitude_geometric} ft")
+        logger.info(f"Barometric AGL: {agl} ft AGL")
         logger.info(f"Latitude: {latitude}")
         logger.info(f"Longitude: {longitude}")
         logger.info(f"Vertical Speed: {vertical_speed} ft/min")
