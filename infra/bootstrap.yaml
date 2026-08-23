@@ -33,7 +33,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:*"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}@*/${GitHubRepo}@*:*"
       Policies:
         - PolicyName: infra-cfn-deploy
           PolicyDocument:
@@ -118,7 +118,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:*"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}@*/${GitHubRepo}@*:*"
       Policies:
         - PolicyName: backend-deploy
           PolicyDocument:
