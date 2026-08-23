@@ -208,3 +208,4 @@ Outputs:
   FrontendRoleArn:
     Description: ARN for the AWS_ROLE_FRONTEND GitHub secret
     Value: !GetAtt FrontendDeployRole.Arn
+# trigger ci
