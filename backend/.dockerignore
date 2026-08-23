@@ -1,0 +1,11 @@
+.DS_Store
+.pytest_cache
+README.md
+Pipfile
+Pipfile.lock
+logging.json
+package-lock.json
+tests/
+pytest.ini
+.env
+.env.*

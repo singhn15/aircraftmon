@@ -1,0 +1,7 @@
+[
+    { "ParameterKey": "VpcId",        "ParameterValue": "" },
+    { "ParameterKey": "SubnetIds",    "ParameterValue": "" },
+    { "ParameterKey": "CidrIp",       "ParameterValue": "" },
+    { "ParameterKey": "Image",        "ParameterValue": "" },
+    { "ParameterKey": "DesiredCount", "ParameterValue": "1" }
+]

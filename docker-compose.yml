@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: ./backend
+    volumes: 
+      - ${HOME}/.aws:/root/.aws
+    environment: 
+      - AWS_PROFILE=devops
+  frontend:
+    build: ./frontend
+    ports: 
+      - 8080:80
+    depends_on: 
+      - backend
