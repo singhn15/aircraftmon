@@ -18,7 +18,7 @@ Resources:
         - sts.amazonaws.com
       ThumbprintList:
         - 6938fd4d98bab03faadb97b34396831e3780aea1
-    InfraDeployRole:
+  InfraDeployRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: gha-aircraftmon-infra
@@ -103,7 +103,7 @@ Resources:
                   - logs:DescribeLogGroups
                   - logs:PutRetentionPolicy
                 Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/aircraftmon-*"
-    BackendDeployRole:
+  BackendDeployRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: gha-aircraftmon-backend
@@ -162,7 +162,7 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ecs-tasks.amazonaws.com
-    FrontendDeployRole:
+  FrontendDeployRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: gha-aircraftmon-frontend
