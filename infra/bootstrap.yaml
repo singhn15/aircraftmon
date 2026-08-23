@@ -51,6 +51,7 @@ Resources:
                   - cloudformation:DescribeStackEvents
                   - cloudformation:DescribeChangeSet
                   - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
                 Resource:
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aircraftmon-backend/*"
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aircraftmon-frontend/*"
@@ -208,4 +209,3 @@ Outputs:
   FrontendRoleArn:
     Description: ARN for the AWS_ROLE_FRONTEND GitHub secret
     Value: !GetAtt FrontendDeployRole.Arn
-# trigger ci
