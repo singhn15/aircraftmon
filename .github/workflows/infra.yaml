@@ -1,0 +1,100 @@
+name: infra CI
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+
+permissions:
+  id-token: write     # lets the workflow request the OIDC token (to assume the AWS role)
+  contents: read      # lets it check out the repo
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Lint the templates
+        run: |
+          pip install cfn-lint
+          cfn-lint infra/*.yaml
+
+      - name: Configure AWS credentials (assume infra role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_INFRA }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Preview frontend changes
+        run: |
+          OUT=$(aws cloudformation deploy \
+            --template-file infra/frontend.yaml \
+            --stack-name aircraftmon-frontend \
+            --no-execute-changeset --no-fail-on-empty-changeset)
+          echo "$OUT"
+          CS=$(echo "$OUT" | grep -o 'arn:aws:cloudformation:[^ ]*changeSet/[^ ]*' | head -1)
+          if [ -z "$CS" ]; then echo "No frontend changes."; else
+            aws cloudformation describe-change-set --change-set-name "$CS" \
+              --query 'Changes[].ResourceChange.{Action:Action,Resource:LogicalResourceId,Type:ResourceType,Replacement:Replacement}' \
+              --output table
+          fi
+
+      - name: Preview backend changes
+        run: |
+          OUT=$(aws cloudformation deploy \
+            --template-file infra/fargate.yaml \
+            --stack-name aircraftmon-backend \
+            --parameter-overrides \
+              VpcId=${{ vars.VPC_ID }} \
+              SubnetIds=${{ vars.SUBNET_IDS }} \
+              CidrIp=${{ secrets.BACKEND_ALLOWED_CIDR }} \
+              DesiredCount=1 \
+            --capabilities CAPABILITY_IAM \
+            --no-execute-changeset --no-fail-on-empty-changeset)
+          echo "$OUT"
+          CS=$(echo "$OUT" | grep -o 'arn:aws:cloudformation:[^ ]*changeSet/[^ ]*' | head -1)
+          if [ -z "$CS" ]; then echo "No backend changes."; else
+            aws cloudformation describe-change-set --change-set-name "$CS" \
+              --query 'Changes[].ResourceChange.{Action:Action,Resource:LogicalResourceId,Type:ResourceType,Replacement:Replacement}' \
+              --output table
+          fi
+
+  apply:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (assume infra role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_INFRA }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy frontend stack
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/frontend.yaml \
+            --stack-name aircraftmon-frontend \
+            --no-fail-on-empty-changeset
+
+      - name: Deploy backend stack
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/fargate.yaml \
+            --stack-name aircraftmon-backend \
+            --parameter-overrides \
+              VpcId=${{ vars.VPC_ID }} \
+              SubnetIds=${{ vars.SUBNET_IDS }} \
+              CidrIp=${{ secrets.BACKEND_ALLOWED_CIDR }} \
+              DesiredCount=1 \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset
