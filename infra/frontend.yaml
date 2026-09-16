@@ -67,3 +67,4 @@ Outputs:
     Value: !Ref FrontendDistribution
   DistributionDomainName:
     Value: !GetAtt FrontendDistribution.DomainName
+#trigger ci

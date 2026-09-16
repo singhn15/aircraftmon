@@ -18,7 +18,7 @@ Resources:
         - sts.amazonaws.com
       ThumbprintList:
         - 6938fd4d98bab03faadb97b34396831e3780aea1
-    InfraDeployRole:
+  InfraDeployRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: gha-aircraftmon-infra
@@ -33,7 +33,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:*"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}@*/${GitHubRepo}@*:*"
       Policies:
         - PolicyName: infra-cfn-deploy
           PolicyDocument:
@@ -51,6 +51,7 @@ Resources:
                   - cloudformation:DescribeStackEvents
                   - cloudformation:DescribeChangeSet
                   - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
                 Resource:
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aircraftmon-backend/*"
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aircraftmon-frontend/*"
@@ -103,7 +104,7 @@ Resources:
                   - logs:DescribeLogGroups
                   - logs:PutRetentionPolicy
                 Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/aircraftmon-*"
-    BackendDeployRole:
+  BackendDeployRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: gha-aircraftmon-backend
@@ -118,7 +119,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:*"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}@*/${GitHubRepo}@*:*"
       Policies:
         - PolicyName: backend-deploy
           PolicyDocument:
@@ -162,7 +163,7 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ecs-tasks.amazonaws.com
-    FrontendDeployRole:
+  FrontendDeployRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: gha-aircraftmon-frontend
@@ -177,7 +178,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:*"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}@*/${GitHubRepo}@*:*"
       Policies:
         - PolicyName: frontend-deploy
           PolicyDocument:

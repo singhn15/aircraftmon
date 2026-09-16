@@ -31,7 +31,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_INFRA }}
           aws-region: ${{ vars.AWS_REGION }}
-
+      
       - name: Preview frontend changes
         run: |
           OUT=$(aws cloudformation deploy \
@@ -48,6 +48,8 @@ jobs:
 
       - name: Preview backend changes
         run: |
+          CURRENT_IMAGE=$(aws cloudformation describe-stacks --stack-name aircraftmon-backend \
+            --query "Stacks[0].Parameters[?ParameterKey=='Image'].ParameterValue" --output text)
           OUT=$(aws cloudformation deploy \
             --template-file infra/fargate.yaml \
             --stack-name aircraftmon-backend \
@@ -56,6 +58,7 @@ jobs:
               SubnetIds=${{ vars.SUBNET_IDS }} \
               CidrIp=${{ secrets.BACKEND_ALLOWED_CIDR }} \
               DesiredCount=1 \
+              Image="$CURRENT_IMAGE" \
             --capabilities CAPABILITY_IAM \
             --no-execute-changeset --no-fail-on-empty-changeset)
           echo "$OUT"
@@ -88,6 +91,8 @@ jobs:
 
       - name: Deploy backend stack
         run: |
+          CURRENT_IMAGE=$(aws cloudformation describe-stacks --stack-name aircraftmon-backend \
+            --query "Stacks[0].Parameters[?ParameterKey=='Image'].ParameterValue" --output text)
           aws cloudformation deploy \
             --template-file infra/fargate.yaml \
             --stack-name aircraftmon-backend \
@@ -96,5 +101,6 @@ jobs:
               SubnetIds=${{ vars.SUBNET_IDS }} \
               CidrIp=${{ secrets.BACKEND_ALLOWED_CIDR }} \
               DesiredCount=1 \
+              Image="$CURRENT_IMAGE" \
             --capabilities CAPABILITY_IAM \
             --no-fail-on-empty-changeset
