@@ -58,7 +58,7 @@ jobs:
               SubnetIds=${{ vars.SUBNET_IDS }} \
               CidrIp=${{ secrets.BACKEND_ALLOWED_CIDR }} \
               DesiredCount=1 \
-              Image=$"CURRENT_IMAGE" \
+              Image="$CURRENT_IMAGE" \
             --capabilities CAPABILITY_IAM \
             --no-execute-changeset --no-fail-on-empty-changeset)
           echo "$OUT"
@@ -101,6 +101,6 @@ jobs:
               SubnetIds=${{ vars.SUBNET_IDS }} \
               CidrIp=${{ secrets.BACKEND_ALLOWED_CIDR }} \
               DesiredCount=1 \
-              Image="$CURRENT_IMAGE"
+              Image="$CURRENT_IMAGE" \
             --capabilities CAPABILITY_IAM \
             --no-fail-on-empty-changeset
