@@ -22,6 +22,7 @@ dist/
 # Log files
 *.log
 *.json.log.*
+*.log.json
 
 # MISC
 storage.py
