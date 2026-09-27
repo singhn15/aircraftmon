@@ -1,0 +1,6 @@
+# GHSA-6v7p-g79w-8964 — msgpack OOB-read. This is pip's VENDORED copy
+# (site-packages/pip/_vendor/msgpack), not an app dependency. pip is build-time
+# tooling only; the running app never calls pip, so it's not in the attack surface.
+# No fix available: current pip (26.2.1) still bundles msgpack 1.1.2.
+# Revisit when pip vendors msgpack >= 1.2.1. Added 2026-09-27.
+GHSA-6v7p-g79w-8964
