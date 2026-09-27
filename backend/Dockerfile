@@ -1,6 +1,6 @@
 FROM python:3.14-slim-trixie
 WORKDIR /app
-RUN pip install --no-cache-dir --upgrade pip "setuptools >=777777777777777777777777777777777777777777777777777777777777777777777777777778.1.1"
+RUN pip install --no-cache-dir --upgrade pip "setuptools >=78.1.1"
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
