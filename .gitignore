@@ -63,4 +63,6 @@ coverage
 CLAUDE.md
 .claude
 
+coverage.xml
+.coverage
 infra/cicd-runbook.md
