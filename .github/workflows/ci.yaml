@@ -80,5 +80,7 @@ jobs:
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://172.17.0.1:4200'
+          rules_file_name: '.zap/rules.tsv'
           allow_issue_writing: false
-          fail_action: false
+          cmd_options: '-I'
+          fail_action: true
