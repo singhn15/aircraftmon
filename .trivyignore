@@ -1,0 +1,13 @@
+# GHSA-6v7p-g79w-8964 — msgpack OOB-read. This is pip's VENDORED copy
+# (site-packages/pip/_vendor/msgpack), not an app dependency. pip is build-time
+# tooling only; the running app never calls pip, so it's not in the attack surface.
+# No fix available: current pip (26.2.1) still bundles msgpack 1.1.2.
+# Revisit when pip vendors msgpack >= 1.2.1. Added 2026-09-27.
+GHSA-6v7p-g79w-8964
+
+# CVE-2025-47273 — setuptools PackageIndex path traversal. The INSTALLED setuptools
+# is 84.0.0 (patched, verified in the build log). Trivy flags a phantom 70.3.0
+# reference bundled inside pip's build tooling (PkgPath: none) — not an importable
+# or runtime package, and only relevant when using setuptools to INSTALL packages,
+# which the running app never does. Added 2026-09-27.
+CVE-2025-47273

@@ -7,15 +7,16 @@ name = "pypi"
 fastapi = "*"
 uvicorn = "*"
 python-dotenv = "*"
-aiohttp = "*"
+aiohttp = ">=3.14.3"
 boto3 = "*"
 pydantic = "*"
 python-json-logger = "*"
 botocore = {extras = ["crt"], version = "*"}
-httpx2 = "*"
+httpx2 = ">=2.12.0"
 
 [dev-packages]
 pytest = "*"
+pytest-cov = "*"
 
 [requires]
 python_version = "3.14"
