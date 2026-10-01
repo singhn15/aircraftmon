@@ -145,8 +145,14 @@ Resources:
                 Effect: Allow
                 Action:
                   - cloudformation:UpdateStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
                   - cloudformation:DescribeStacks
                   - cloudformation:DescribeStackEvents
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
                 Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aircraftmon-backend/*"
               - Sid: RollTheService
                 Effect: Allow
@@ -164,6 +170,19 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ecs-tasks.amazonaws.com
+              - Sid: DescribeNetworkForService
+                Effect: Allow
+                Action:
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                Resource: "*"   # ec2:Describe* does not support resource-level perms
+              - Sid: ReadTaskRolesForTaskDef
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/aircraftmon-backend-*"
   FrontendDeployRole:
     Type: AWS::IAM::Role
     Properties:
