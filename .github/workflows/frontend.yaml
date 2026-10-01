@@ -1,0 +1,48 @@
+name: Frontend deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the SPA
+        run: npm run build
+
+      - name: Configure AWS credentials (assume frontend role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_FRONTEND }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sync build to S3
+        run: aws s3 sync dist "s3://${{ vars.FRONTEND_BUCKET }}" --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ vars.CLOUDFRONT_DIST_ID }} \
+            --paths '/*'
