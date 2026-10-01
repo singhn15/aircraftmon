@@ -13,6 +13,7 @@ pydantic = "*"
 python-json-logger = "*"
 botocore = {extras = ["crt"], version = "*"}
 httpx2 = ">=2.12.0"
+urllib3 = ">=2.8.0"
 
 [dev-packages]
 pytest = "*"

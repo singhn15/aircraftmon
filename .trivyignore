@@ -11,3 +11,12 @@ GHSA-6v7p-g79w-8964
 # or runtime package, and only relevant when using setuptools to INSTALL packages,
 # which the running app never does. Added 2026-09-27.
 CVE-2025-47273
+
+# CVE-2026-97687 / CVE-2026-97689 — urllib3 TLS-interception + DoS. The INSTALLED
+# urllib3 (used by botocore at runtime) is 2.8.0 (patched). Trivy flags pip's
+# VENDORED copy at site-packages/pip/_vendor/urllib3 (_version.py pins 2.7.0) — pip
+# is build-time tooling, never imported by the running app. No runtime exposure.
+# Remove once the backend moves to a multi-stage/distroless image (no pip shipped).
+# Added 2026-10-01.
+CVE-2026-97687
+CVE-2026-97689

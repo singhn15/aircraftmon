@@ -1,0 +1,65 @@
+name: Backend deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (assume backend role via OIDC)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_BACKEND }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd
+
+      - name: Compute image reference (keeps the account id out of the repo)
+        run: echo "IMAGE=${{ steps.ecr.outputs.registry }}/aircraftmon-backend:${{ github.sha }}" >> "$GITHUB_ENV"
+
+      - name: Build backend image
+        run: docker build -t "$IMAGE" ./backend
+
+      - name: Trivy gate — block HIGH/CRITICAL before it reaches ECR
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Push image to ECR
+        run: docker push "$IMAGE"
+
+      - name: Deploy CloudFormation (bump image)
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/fargate.yaml \
+            --stack-name aircraftmon-backend \
+            --parameter-overrides \
+              VpcId=${{ vars.VPC_ID }} \
+              SubnetIds=${{ vars.SUBNET_IDS }} \
+              CidrIp=${{ secrets.BACKEND_ALLOWED_CIDR }} \
+              DesiredCount=1 \
+              Image="$IMAGE" \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Wait for the ECS service to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster aircraftmon-backend \
+            --services aircraftmon-backend
