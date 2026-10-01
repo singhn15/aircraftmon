@@ -28,23 +28,22 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: '3.14'
-      - name: Install pipenv
-        run: pip install pipenv
-      - name: Install deps from Pipfile.lock
-        run: pipenv install --dev --deploy
+          version: "0.12.17"
       - name: Run tests with coverage
         env:
           AWS_DEFAULT_REGION: us-east-2
-        run: pipenv run pytest --cov=. --cov-report=xml
+        run: |
+          uv sync --frozen
+          uv run pytest --cov=. --cov-report=xml
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage
           path: backend/coverage.xml
- 
+
   image-scan:
     needs: secrets
     runs-on: ubuntu-latest

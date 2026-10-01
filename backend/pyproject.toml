@@ -1,0 +1,26 @@
+[project]
+name = "aircraftmon-backend"
+version = "0.1.0"
+description = "Aircraft monitoring backend (FastAPI)"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
+    "aiohttp>=3.14.3",
+    "boto3",
+    "pydantic",
+    "python-json-logger",
+    "botocore[crt]",
+    "httpx2>=2.12.0",
+    "urllib3>=2.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.uv]
+package = false
