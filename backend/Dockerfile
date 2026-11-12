@@ -1,4 +1,4 @@
-FROM python:3.14-slim-trixie
+FROM python:3.15-slim-trixie
 WORKDIR /app
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir --upgrade "setuptools >=78.1.1"
